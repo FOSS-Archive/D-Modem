@@ -430,6 +430,8 @@ extern void modem_error  (struct modem *m);
 extern void modem_ring   (struct modem *m);
 extern void modem_event  (struct modem *m);
 extern void modem_process(struct modem *m,void *in,void *out,int cnt);
+void dmodem_command(const char *cmd);
+void modem_remote_hangup(struct modem *m);
 
 /* packers && EC */ // FIXME: improve interface
 extern void modem_async_start(struct modem *m);

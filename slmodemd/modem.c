@@ -53,6 +53,9 @@
 #include <modem.h>
 #include <modem_debug.h>
 
+__attribute__((weak)) void dmodem_command(const char *cmd) {
+        (void)cmd;
+}
 
 #define XMIT_SIZE 4096
 
@@ -423,7 +426,9 @@ static void run_modem_stop(struct modem *m)
 
 static void modem_hup(struct modem *m, unsigned local)
 {
-	MODEM_DBG("modem_hup...%d\n",m->state);
+        MODEM_DBG("modem_hup...%d\n",m->state);
+        if (local)
+                dmodem_command("HANGUP\n");
 	switch(m->state) {
 	case STATE_MODEM_IDLE:
 		return;
@@ -1568,6 +1573,7 @@ int modem_recv_from_tty(struct modem *m, char *buf, int n)
 int modem_answer(struct modem *m)
 {
         MODEM_DBG("modem answer...\n");
+        dmodem_command("ANSWER\n");
         if ( m->dp ) {
                 MODEM_ERR("dp %d is already exists.\n", m->dp->id);
                 return -1;
@@ -1613,14 +1619,22 @@ static int modem_dial_start(struct modem *m)
 
 int modem_dial(struct modem *m)
 {
-	int ret;
+        int ret;
         MODEM_DBG("modem dial: %s...\n", m->dial_string);
-	m->dp_requested = 0;
-	m->automode_requested = 0;
- 	ret = modem_dial_start(m);
-	if(ret)
-		return -1;
-	return modem_start(m);
+        char cmd[160];
+        snprintf(cmd,sizeof(cmd),"DIAL %s\n", m->dial_string);
+        dmodem_command(cmd);
+        m->dp_requested = 0;
+        m->automode_requested = 0;
+        ret = modem_dial_start(m);
+        if(ret)
+                return -1;
+        return modem_start(m);
+}
+
+void modem_remote_hangup(struct modem *m)
+{
+        modem_hup(m,0);
 }
 
 

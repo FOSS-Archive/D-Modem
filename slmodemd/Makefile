@@ -20,6 +20,7 @@ CC:= gcc
 else
 # SUPPORT_ALSA:=1
 CC:= gcc -m32
+CFLAGS+= -I/usr/include/x86_64-linux-gnu
 endif
 
 RM:= rm -f

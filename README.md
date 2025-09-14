@@ -4,7 +4,7 @@ Connect to dialup modems over VoIP using SIP, no modem hardware required.
 https://www.aon.com/cyber-solutions/aon_cyber_labs/introducing-d-modem-a-software-sip-modem/
 
 ## Building
-You'll need Linux and a working 32-bit development environment (gcc -m32 needs to work, Debian-based systems can install libc6-dev-i386), along with PJSIP's dependencies (OpenSSL).  Then run 'make' from the top-level directory.
+You'll need Linux along with PJSIP's dependencies (OpenSSL).  The SmartLink DSP library only ships as 32-bit object code, so building requires 32-bit support (e.g., gcc-multilib).  Run `make` from the top-level directory.
 
 ## How it Works
 Traditional “controller-based” modems generally used a microcontroller and a DSP to handle all aspects of modem communication on the device itself.  Later, so-called “Winmodems” were introduced that allowed for field-programmable DSPs and moved the controller and other functionality into software running on the host PC.  This was followed by “pure software” modems that moved DSP functionality to the host as well.  The physical hardware of these softmodems was only used to connect to the phone network, and all processing was done in software. 
@@ -58,14 +58,27 @@ Finally, dial the number of the target system.  Below shows a connection to the 
     59515 21-10-28 21:40:19 11 0 -.1 045.0 UTC(NIST) * 
     59515 21-10-28 21:40:20 11 0 -.1 045.0 UTC(NIST) * 
     59515 21-10-28 21:40:21 11 0 -.1 045.0 UTC(NIST) * 
-    59515 21-10-28 21:40:22 11 0 -.1 045.0 UTC(NIST) * 
+    59515 21-10-28 21:40:22 11 0 -.1 045.0 UTC(NIST) *
     59515 21-10-28 21:40:23 11 0 -.1 045.0 UTC(NIST) *
- 
+
+### Calling between two D-Modem clients
+
+The `d-modem` helper launched by `slmodemd` registers your SIP account and waits for incoming calls.
+When a call arrives, the terminal prints `RING` and you can answer with `ATA` or hang up with `ATH`.
+
+To connect two clients together:
+
+1. On each machine set `SIP_LOGIN` to credentials for SIP accounts that can call each other.
+2. Start `slmodemd` pointing at `d-modem` and open the created `/dev/ttySL0` with a terminal program.
+3. Disable dial tone detection (`ATX3`) and set the desired modulation (`AT+MS=...`) on both ends.
+4. From the calling side issue `ATD` with the callee's SIP URI or number.
+5. The receiving side will show `RING`; answer with `ATA`.
+6. Either side can terminate the call with `ATH`.
+
 ## Known Issues / Future Work
-- Connections are unreliable, and it is currently difficult to connect at speeds higher than 14.4kbps or so.  It might be possible to improve this by disabling/reconfiguring PJSIP’s jitter buffer. 
-- Additional logging/error handling is needed 
-- The serial interface could be replaced with stdio or a socket, and common AT configuration options could be exposed as command line options 
-- There is currently no support for receiving calls 
+- Connections are unreliable, and it is currently difficult to connect at speeds higher than 14.4kbps or so.  It might be possible to improve this by disabling/reconfiguring PJSIP’s jitter buffer.
+- Additional logging/error handling is needed
+- The serial interface could be replaced with stdio or a socket, and common AT configuration options could be exposed as command line options
 
 
 Copyright 2021 Aon plc

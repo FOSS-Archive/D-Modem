@@ -135,6 +135,12 @@ struct device_struct {
 
 static char  inbuf[4096];
 static char outbuf[4096];
+static int control_fd = -1;
+
+void dmodem_command(const char *cmd) {
+        if (control_fd != -1)
+                write(control_fd, cmd, strlen(cmd));
+}
 
 
 /*
@@ -615,53 +621,66 @@ struct modem_driver mdm_modem_driver = {
 
 static int socket_start (struct modem *m)
 {
-	struct device_struct *dev = m->dev_data;
-	int ret;
-	DBG("socket_start...\n");
+        struct device_struct *dev = m->dev_data;
+        int ret;
+        DBG("socket_start...\n");
 
-	int sockets[2];
+        int sockets[2];
+        int ctrls[2];
 
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
-		perror("socketpair");
-		exit(-1);
-	}
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
+                perror("socketpair");
+                exit(-1);
+        }
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, ctrls) == -1) {
+                perror("socketpair");
+                exit(-1);
+        }
 
-	pid_t pid = fork();
-	if (pid == -1) {
-		perror("fork");
-		exit(-1);
-	}
-	if (pid == 0) { // child
-		char str[16];
-		snprintf(str,sizeof(str),"%d",sockets[0]);
-		close(sockets[1]);
-		execl(modem_exec,modem_exec,m->dial_string,str,NULL);
-	} else {
-		close(sockets[0]);
-		dev->fd = sockets[1];
-		dev->delay = 0;
-		ret = 192*2;
-		memset(outbuf, 0 , ret);
-		ret = write(dev->fd, outbuf, ret);
-		DBG("done delay thing\n");
-		if (ret < 0) {
-			close(dev->fd);
-			dev->fd = -1;
-			return ret;
-		}
-		dev->delay = ret/2;
-	}
-	return 0;
+        pid_t pid = fork();
+        if (pid == -1) {
+                perror("fork");
+                exit(-1);
+        }
+        if (pid == 0) { // child
+                char str[16], ctrlstr[16];
+                snprintf(str,sizeof(str),"%d",sockets[0]);
+                snprintf(ctrlstr,sizeof(ctrlstr),"%d",ctrls[0]);
+                close(sockets[1]);
+                close(ctrls[1]);
+                execl(modem_exec,modem_exec,"-",str,ctrlstr,NULL);
+        } else {
+                close(sockets[0]);
+                close(ctrls[0]);
+                dev->fd = sockets[1];
+                control_fd = ctrls[1];
+                dev->delay = 0;
+                ret = 192*2;
+                memset(outbuf, 0 , ret);
+                ret = write(dev->fd, outbuf, ret);
+                DBG("done delay thing\n");
+                if (ret < 0) {
+                        close(dev->fd);
+                        dev->fd = -1;
+                        return ret;
+                }
+                dev->delay = ret/2;
+        }
+        return 0;
 }
 
 static int socket_stop (struct modem *m)
 {
-	struct device_struct *dev = m->dev_data;
-	DBG("socket_stop...\n");
-	close(dev->fd);
-	dev->fd = -1;
-	wait(NULL); // for exec'ed child
-	return 0;
+        struct device_struct *dev = m->dev_data;
+        DBG("socket_stop...\n");
+        close(dev->fd);
+        dev->fd = -1;
+        if (control_fd != -1) {
+                close(control_fd);
+                control_fd = -1;
+        }
+        wait(NULL); // for exec'ed child
+        return 0;
 }
 
 static int socket_ioctl(struct modem *m, unsigned int cmd, unsigned long arg)
@@ -891,12 +910,16 @@ static int modem_run(struct modem *m, struct device_struct *dev)
                 tmo.tv_sec = 1;
                 tmo.tv_usec= 0;
                 FD_ZERO(&rset);
-		FD_ZERO(&eset);
-		if(m->started)
-			FD_SET(dev->fd,&rset);
+                FD_ZERO(&eset);
+                if(m->started)
+                        FD_SET(dev->fd,&rset);
 
-		FD_SET(dev->fd,&eset);
-		max_fd = dev->fd;
+                FD_SET(dev->fd,&eset);
+                max_fd = dev->fd;
+                if(control_fd != -1) {
+                        FD_SET(control_fd,&rset);
+                        if (control_fd > max_fd) max_fd = control_fd;
+                }
 		
 		if(pty_closed && close_count > 0) {
 			if(!m->started ||
@@ -917,8 +940,19 @@ static int modem_run(struct modem *m, struct device_struct *dev)
                         return ret;
                 }
 
-		if ( ret == 0 )
-			continue;
+                if ( ret == 0 )
+                        continue;
+
+                if(control_fd != -1 && FD_ISSET(control_fd,&rset)) {
+                        int n = read(control_fd, inbuf, sizeof(inbuf)-1);
+                        if (n > 0) {
+                                inbuf[n] = '\0';
+                                if (!strncmp(inbuf,"RING",4))
+                                        modem_ring(m);
+                                else if (!strncmp(inbuf,"DISCONNECT",10))
+                                        modem_remote_hangup(m);
+                        }
+                }
 
 		if(FD_ISSET(dev->fd, &eset)) {
 			unsigned stat;
